@@ -1,125 +1,160 @@
-from django.contrib.auth import get_user_model
+from django import forms
 from django.test import Client, TestCase
 from django.urls import reverse
-from django import forms
 
-from posts.models import Group, Post
+from posts.models import Group, Post, User
 
-User = get_user_model()
+TESTS_RECORDS_COUNT = 12
 
 
-class ViewsTests(TestCase):
-    """Создаем тестовые посты и группы."""
+class PostsViewsTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create(username='Test')
+        cls.user = User.objects.create_user(username='AutoTestUser')
         cls.group = Group.objects.create(
-            title='Тестовый заголовок',
-            slug='test-group',
-            description='тестовое описание',
+            title='Test group',
+            slug='test_slug',
+            description='This is a test group!',
         )
         cls.post = Post.objects.create(
             author=cls.user,
-            text='тестовое описание 2',
-            group=cls.group
+            text='Тестовый текст #1',
+            group=cls.group,
         )
+        cls.user2 = User.objects.create_user(username='AutoTestUser2')
+        cls.group2 = Group.objects.create(
+            title='Test group #2',
+            slug='test_slug2',
+            description='This is a test group #2!',
+        )
+        cls.post2 = Post.objects.create(
+            author=cls.user2,
+            text='Тестовый текст #2',
+            group=cls.group2,
+        )
+        for i in range(10):
+            Post.objects.create(
+                author=cls.user,
+                text='Тестовый текст #' + str(i + 3),
+                group=cls.group,
+            )
 
     def setUp(self):
-        # Создаём неавторизованный клиент
         self.guest_client = Client()
-        # Создаём авторизованный клиент
-        self.user = User.objects.create_user(username='StasBasov')
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
 
-    # Проверяем используемые шаблоны
-    def test_pages_uses_correct_template(self):
+    def test_views_uses_correct_template(self):
         """URL-адрес использует соответствующий шаблон."""
-        templates_pages_names = {
-            'index.html': reverse('index'),
-            'group_list.html': reverse('group_list'),
-            'profile.html': reverse('profile'),
-            'psot_detail.html': reverse('psot_detail'),
-            'create_post.html': reverse('create_post'),
-            'create_post.html': reverse('post_editt'),
-            
+        post_id = self.post.id
+        templates_url_names = {
+            reverse('posts:index'): 'posts/index.html',
+            reverse('posts:post_create'): 'posts/create_post.html',
+            (reverse('posts:group_list', args=(self.group.slug,))):
+                'posts/group_list.html',
+            (reverse('posts:post_detail', args=(post_id,))):
+                'posts/post_detail.html',
+            (reverse('posts:profile', args=(self.user.username,))):
+                'posts/profile.html',
+            (reverse('posts:post_edit', args=(post_id,))):
+                'posts/create_post.html',
         }
-        for template, reverse_name in templates_pages_names.items():
+        for reverse_name, template in templates_url_names.items():
             with self.subTest(reverse_name=reverse_name):
                 response = self.authorized_client.get(reverse_name)
-                self.assertTemplateUsed(
-                    response,
-                    template,
-                    'Ошибка вызова шаблона страницы'
-                ) 
+                self.assertTemplateUsed(response, template)
 
-    def test_index_show_correct_context(self):
-        """Шаблон index сформирован с правильным контекстом."""
-        response_index = self.authorized_client.get(reverse('posts:index'))
-        page_index_context = response_index.context
-        self.post_exist(page_index_context)
+    def test_index_group_list_profile_pages_have_correct_context(self):
+        """Шаблоны index, group list и profile сформированы
+        с правильным контекстом, созданный пост появляется на главной странице,
+        странице пользователя и в соответствующей группеб
+        также, что пост не появляется в другой группе,
+        непредназначенной для этого поста."""
+        templates_url_names = [
+            reverse('posts:index'),
+            (reverse('posts:group_list', args=(self.group.slug,))),
+            (reverse('posts:profile', args=(self.user.username,))),
+        ]
+        for reverse_name in templates_url_names:
+            with self.subTest(reverse_name=reverse_name):
+                response = self.authorized_client.get(reverse_name)
+                post = response.context['page_obj'][0]
+                self.assertEqual(post.author, self.user)
+                self.assertEqual(
+                    post.text, 'Тестовый текст #' + str(10 + 2)
+                )
+                self.assertEqual(post.group, self.group)
+        response = self.authorized_client.get(reverse(
+            'posts:group_list', args=(self.group2.slug,)
+        ))
+        for i in range(len(response.context['page_obj'])):
+            object = response.context['page_obj'][i]
+            self.assertNotEqual(
+                object.text, 'Тестовый текст #' + str(10 + 2))
 
-    def test_post_detail_show_correct_context(self):
-        """Шаблон post_detail сформирован с правильным контекстом."""
-        response_post_detail = self.authorized_client.get(
-            reverse(
-                'posts:post_detail',
-                kwargs={'post_id': ViewsTests.post.pk}
-            )
+    def test_first_pages_index_group_list_profile_have_ten_records(self):
+        """Шаблоны index, group list и profile имееют 10 записей
+        на странице."""
+        templates_url_names = [
+            reverse('posts:index'),
+            (reverse('posts:group_list', args=(self.group.slug,))),
+            (reverse('posts:profile', args=(self.user.username,))),
+        ]
+        for reverse_name in templates_url_names:
+            with self.subTest(reverse_name=reverse_name):
+                response = self.authorized_client.get(reverse_name)
+                self.assertEqual(
+                    len(response.context['page_obj']), 10)
+
+    def test_second_index_page_contains_two_records(self):
+        """Шаблон index имеет 2 записи на 2ой странице."""
+        response = self.client.get(reverse('posts:index'), {'page': 2})
+        self.assertEqual(
+            len(response.context['page_obj']),
+            TESTS_RECORDS_COUNT - 10
         )
-        page_post_detail_context = response_post_detail.context
-        self.post_exist(page_post_detail_context)
 
-    def test_group_page_show_correct_context(self):
-        """Шаблон group_list сформирован с правильным контекстом."""
-        response_group = self.authorized_client.get(
-            reverse(
-                'posts:group_list',
-                kwargs={'slug': ViewsTests.group.slug}
-            )
+    def test_second_page_group_list_has_one_records(self):
+        """Шаблон group_list имеет 1 запись на  2й странице."""
+        response = self.client.get(
+            reverse('posts:group_list', args=(self.group.slug,)), {'page': 2}
         )
-        page_group_context = response_group.context
-        task_group = response_group.context['group']
-        self.post_exist(page_group_context)
-        self.assertEqual(task_group, ViewsTests.group)
-
-    def test_profile_show_correct_context(self):
-        """Шаблон group_list сформирован с правильным контекстом."""
-        response_profile = self.authorized_client.get(
-            reverse(
-                'posts:profile',
-                kwargs={'username': ViewsTests.user.username}
-            )
+        self.assertEqual(
+            len(response.context['page_obj']),
+            TESTS_RECORDS_COUNT - 10 - 1
         )
-        page_profile_context = response_profile.context
-        task_profile = response_profile.context['author']
-        self.post_exist(page_profile_context)
-        self.assertEqual(task_profile, ViewsTests.user)
 
-    def test_create_post_page_show_correct_context(self):
-        """Шаблон create_post сформирован с правильным контекстом."""
+    def test_second_profile_page_has_one_record(self):
+        """Шаблон profile имеет 1 запись на второй странице."""
+        response = self.client.get(
+            reverse('posts:profile', args=(self.user.username,)), {'page': 2}
+        )
+        self.assertEqual(
+            len(response.context['page_obj']),
+            TESTS_RECORDS_COUNT - 10 - 1
+        )
+
+    def test_post_detail_has_correct_context(self):
+        """Шаблон post detail имеет правильный контекст."""
+        post_id = 1
+        response = self.client.get(
+            reverse('posts:post_detail', args=(post_id,))
+        )
+        post = response.context['post']
+        self.assertEqual(post.author, self.user)
+        self.assertEqual(post.text, 'Тестовый текст #' + str(post_id))
+        self.assertEqual(post.group, self.group)
+        self.assertEqual(post.id, post_id)
+
+    def test_new_post_form(self):
+        """Форма добавления поста имеет правильный контекст."""
         response = self.authorized_client.get(reverse('posts:post_create'))
         form_fields = {
+            'group': forms.fields.ChoiceField,
             'text': forms.fields.CharField,
-            'group': forms.fields.ChoiceField
         }
         for value, expected in form_fields.items():
             with self.subTest(value=value):
-                form_field = response.context['form'].fields[value]
-                self.assertIsInstance(form_field, expected)
-
-    def test_post_edit_page_show_correct_context(self):
-        """Шаблон create_post(edit) сформирован с правильным контекстом."""
-        response = self.authorized_client.get(
-            reverse('posts:post_edit',
-                    kwargs={'post_id': ViewsTests.post.pk})
-        )
-        form_fields = {
-            'text': forms.fields.CharField,
-            'group': forms.fields.ChoiceField
-        }
-        for value, expected in form_fields.items():
-            with self.subTest(value=value):
-                form_field = response.context['form'].fields[value]
+                form_field = response.context.get('form').fields.get(value)
                 self.assertIsInstance(form_field, expected)
