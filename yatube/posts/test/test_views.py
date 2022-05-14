@@ -3,6 +3,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from posts.models import Group, Post, User
+POSTS_PER_PAGE = 10
 
 TESTS_RECORDS_COUNT = 12
 
@@ -33,7 +34,7 @@ class PostsViewsTests(TestCase):
             text='Тестовый текст #2',
             group=cls.group2,
         )
-        for i in range(10):
+        for i in range(POSTS_PER_PAGE):
             Post.objects.create(
                 author=cls.user,
                 text='Тестовый текст #' + str(i + 3),
@@ -82,7 +83,7 @@ class PostsViewsTests(TestCase):
                 post = response.context['page_obj'][0]
                 self.assertEqual(post.author, self.user)
                 self.assertEqual(
-                    post.text, 'Тестовый текст #' + str(10 + 2)
+                    post.text, 'Тестовый текст #' + str(POSTS_PER_PAGE + 2)
                 )
                 self.assertEqual(post.group, self.group)
         response = self.authorized_client.get(reverse(
@@ -91,7 +92,7 @@ class PostsViewsTests(TestCase):
         for i in range(len(response.context['page_obj'])):
             object = response.context['page_obj'][i]
             self.assertNotEqual(
-                object.text, 'Тестовый текст #' + str(10 + 2))
+                object.text, 'Тестовый текст #' + str(POSTS_PER_PAGE + 2))
 
     def test_first_pages_index_group_list_profile_have_ten_records(self):
         """Шаблоны index, group list и profile имееют 10 записей
@@ -105,14 +106,14 @@ class PostsViewsTests(TestCase):
             with self.subTest(reverse_name=reverse_name):
                 response = self.authorized_client.get(reverse_name)
                 self.assertEqual(
-                    len(response.context['page_obj']), 10)
+                    len(response.context['page_obj']), POSTS_PER_PAGE)
 
     def test_second_index_page_contains_two_records(self):
         """Шаблон index имеет 2 записи на 2ой странице."""
         response = self.client.get(reverse('posts:index'), {'page': 2})
         self.assertEqual(
             len(response.context['page_obj']),
-            TESTS_RECORDS_COUNT - 10
+            TESTS_RECORDS_COUNT - POSTS_PER_PAGE
         )
 
     def test_second_page_group_list_has_one_records(self):
@@ -122,7 +123,7 @@ class PostsViewsTests(TestCase):
         )
         self.assertEqual(
             len(response.context['page_obj']),
-            TESTS_RECORDS_COUNT - 10 - 1
+            TESTS_RECORDS_COUNT - POSTS_PER_PAGE - 1
         )
 
     def test_second_profile_page_has_one_record(self):
@@ -132,7 +133,7 @@ class PostsViewsTests(TestCase):
         )
         self.assertEqual(
             len(response.context['page_obj']),
-            TESTS_RECORDS_COUNT - 10 - 1
+            TESTS_RECORDS_COUNT - POSTS_PER_PAGE - 1
         )
 
     def test_post_detail_has_correct_context(self):
