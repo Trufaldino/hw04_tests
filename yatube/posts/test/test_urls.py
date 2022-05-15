@@ -10,6 +10,7 @@ class PostsURLTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Создаем пользователся №1
         cls.user = User.objects.create_user(username='AutoTestUser')
         cls.group = Group.objects.create(
             title='Test group',
@@ -19,6 +20,18 @@ class PostsURLTests(TestCase):
         cls.post = Post.objects.create(
             author=cls.user,
             text='Тестовый текст',
+            group=cls.group,
+        )
+        # Создаем пользователся №2
+        cls.user2 = User.objects.create_user(username='AutoTestUser2')
+        cls.group2 = Group.objects.create(
+            title='Test group 2',
+            slug='test_slug 2',
+            description='This is a test group! 2',
+        )
+        cls.post2 = Post.objects.create(
+            author=cls.user2,
+            text='Тестовый текст #2',
             group=cls.group,
         )
 
@@ -58,13 +71,7 @@ class PostsURLTests(TestCase):
         """Страница по адресу /post/<post_id>/edit/ перенаправит всех, кроме
         автора поста на страницу поста.
         """
-        user2 = User.objects.create_user(username='AutoTestUser2')
-        post2 = Post.objects.create(
-            author=user2,
-            text='Тестовый текст #2',
-            group=self.group,
-        )
-        post_id = post2.id
+        post_id = self.post2.id
         response = self.authorized_client.get(
             reverse('posts:post_edit', args=(post_id,)), follow=True
         )
